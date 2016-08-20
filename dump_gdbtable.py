@@ -34,12 +34,54 @@
 
 import struct
 import sys
+import zlib
+import numpy as np
+import code
+import gdal, gdalconst, gdalnumeric
 
 if len(sys.argv) != 2:
     print('Usage: dump_gdbtable.py some_file.gdbtable')
     sys.exit(1)
 
 filename = sys.argv[1]
+
+rasterds    = np.zeros(shape=(10000,10000))
+rasterds[:] = -9999
+
+driver = gdal.GetDriverByName('GTiff')
+fout   = driver.Create("/z/test.tif", 10000, 10000, 1, gdalconst.GDT_Float32)
+
+# #Register GDAL drivers, for reading stuff in
+# gdal.AllRegister()
+# out_driver = gdal.GetDriverByName('GTiff')
+# outdataset = out_driver.Create("/z/ztest", 10000, 10000, 1, gdalconst.GDT_Float)
+# outband    = outdataset.GetRasterBand(iBand)
+
+# outband.WriteArray(data_tr)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def read_int16(f):
     v = f.read(2)
@@ -567,6 +609,7 @@ for i in range(nfields):
 
 print('')
 
+print ('------ROWS (FEATURES)------')
 for fid in range(nfeaturesx):
 #for fid in [29863]:
 #for fid in [31590]:
@@ -594,8 +637,14 @@ for fid in range(nfeaturesx):
             nremainingflags -= 8
         print('flags = %s' % flags)
 
+    row_nbr    = -1
+    col_nbr    = -1
+    rrd_factor = -1
+
     ifield_for_flag_test = 0
     for ifield in range(len(fields)):
+
+        print('Field type: {0}'.format(fields[ifield].type))
 
         if has_flags:
             if fields[ifield].nullable:
@@ -612,6 +661,12 @@ for fid in range(nfeaturesx):
         elif fields[ifield].type == 1:
             val = read_int32(f)
             print('Field %s : %d' % (fields[ifield].name, val))
+            if fields[ifield].name == 'col_nbr':
+              col_nbr = val
+            if fields[ifield].name == 'row_nbr':
+              row_nbr = val
+            if fields[ifield].name == 'rrd_factor':
+              rrd_factor = val
 
         elif fields[ifield].type == 2:
             val = read_float32(f)
@@ -630,10 +685,29 @@ for fid in range(nfeaturesx):
             val = read_float64(f)
             print('Field %s : %f days since 1899/12/30' % (fields[ifield].name, val))
 
-        elif fields[ifield].type == 8:
+        elif fields[ifield].type == 8: #Appears to be where raster data is stored
+            if rrd_factor!=3:
+              continue
             length = read_varuint(f)
-            val = f.read(length)
-            print('Field %s : "%s" (len=%d)' % (fields[ifield].name, val, length))
+            val    = f.read(length)
+            dval   = zlib.decompress(val)
+            print("Length: {0}".format(length))
+            print("Val length: {0}".format(len(val)))
+            with open('/z/out_'+str(col_nbr)+'_'+str(row_nbr), 'wb') as fout:
+              fout.write(dval)
+            with open('/z/out_'+str(rrd_factor)+'_'+str(col_nbr)+'_'+str(row_nbr)+'.flt', 'wb') as fout:
+              dval      = dval[0:65536]
+              #code.interact(local=locals())
+              unpacked = np.array(struct.unpack('>16384f', dval)).reshape(128,128)
+              #unpacked = [struct.unpack('d', dval[i:i+8])[0] for i in range(0,len(dval),8)]
+              #unpacked  = [struct.unpack('>i', dval[i:i+4])[0] for i in range(0,len(dval),4)] #Works for all ones
+              #unpacked = [struct.unpack('h', dval[i:i+2])[0] for i in range(0,len(dval),2)]
+              rasterds[col_nbr*128:(col_nbr+1)*128,row_nbr*128:(row_nbr+1)*128] = unpacked
+              print("Unpacked len: {0}".format(len(unpacked)))
+              #print(unpacked)
+              fout.write(' '.join(map(str,unpacked)))
+            #print('Field %s : "%s" (len=%d)' % (fields[ifield].name, val, length))
+            print('Field %s : "%s" (len=%d)' % (fields[ifield].name, "BINARY DATA", length))
 
         elif fields[ifield].type == 9:
             length = read_int32(f)
@@ -869,3 +943,8 @@ for fid in range(nfeaturesx):
 
         else:
             print('unhandled type : %d' % fields[ifield].type)
+
+
+fout.GetRasterBand(1).WriteArray(rasterds, 0, 0)
+zfout = None
+del fout
