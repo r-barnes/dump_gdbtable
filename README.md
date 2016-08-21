@@ -13,3 +13,7 @@ Running
 
 extracts the raster stored in the indicated gdbtable. Work is still needed to
 generalize this.
+
+Tiles in unpacked binary and ascii are written to `output/`.
+
+The deciphered raster is saved to `output/test.tif`.
