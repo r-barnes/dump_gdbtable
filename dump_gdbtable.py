@@ -942,7 +942,7 @@ for fid in range(nfeaturesx):
 
 #Save the numpy array as a raster
 driver = gdal.GetDriverByName('GTiff')
-fout   = driver.Create("/z/test.tif", 10000, 10000, 1, gdalconst.GDT_Float32)
+fout   = driver.Create("output/test.tif", 10000, 10000, 1, gdalconst.GDT_Float32)
 band   = fout.GetRasterBand(1)
 band.WriteArray(rasterds, 0, 0)
 band.SetNoDataValue(-9999)
