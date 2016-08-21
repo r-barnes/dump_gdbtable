@@ -45,39 +45,13 @@ if len(sys.argv) != 2:
 
 filename = sys.argv[1]
 
+print("\n\n\n#######################")
+print("###FILENAME: {0}".format(filename))
+
+#Create numpy array big enough to hold any conceivable data. This is a crutch
+#because I don't yet have a way to associate metadata with layers
 rasterds    = np.zeros(shape=(10000,10000))
 rasterds[:] = -9999
-
-driver = gdal.GetDriverByName('GTiff')
-fout   = driver.Create("/z/test.tif", 10000, 10000, 1, gdalconst.GDT_Float32)
-
-# #Register GDAL drivers, for reading stuff in
-# gdal.AllRegister()
-# out_driver = gdal.GetDriverByName('GTiff')
-# outdataset = out_driver.Create("/z/ztest", 10000, 10000, 1, gdalconst.GDT_Float)
-# outband    = outdataset.GetRasterBand(iBand)
-
-# outband.WriteArray(data_tr)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -220,7 +194,6 @@ f = open(filename, 'rb')
 f.seek(4, 0)
 nfeatures = read_int32(f)
 print('nfeatures = %d' % nfeatures)
-
 
 f.seek(32, 0)
 header_offset = read_int32(f)
@@ -686,27 +659,43 @@ for fid in range(nfeaturesx):
             print('Field %s : %f days since 1899/12/30' % (fields[ifield].name, val))
 
         elif fields[ifield].type == 8: #Appears to be where raster data is stored
-            if rrd_factor!=3:
-              continue
             length = read_varuint(f)
             val    = f.read(length)
+
+            #Skip that which is not a base layer
+            if rrd_factor!=0: 
+              continue
+
+            #Decompress data (TODO: Is the data always compressed this way?)
             dval   = zlib.decompress(val)
+
             print("Length: {0}".format(length))
             print("Val length: {0}".format(len(val)))
-            with open('/z/out_'+str(col_nbr)+'_'+str(row_nbr), 'wb') as fout:
+
+            #Save decompressed data for analysis
+            with open('output/out_'+str(col_nbr)+'_'+str(row_nbr), 'wb') as fout:
               fout.write(dval)
-            with open('/z/out_'+str(rrd_factor)+'_'+str(col_nbr)+'_'+str(row_nbr)+'.flt', 'wb') as fout:
+
+            #TODO: The following assumes a 128x128 block size
+            with open('output/out_'+str(rrd_factor)+'_'+str(col_nbr)+'_'+str(row_nbr)+'.flt', 'wb') as fout:
+              #Drop the trailing data to capture only the data
               dval      = dval[0:65536]
-              #code.interact(local=locals())
-              unpacked = np.array(struct.unpack('>16384f', dval)).reshape(128,128)
+
+              #TODO: Generalize for various data formats
+              #TODO: Are double and short int also big endian?
+              unpacked  = np.array(struct.unpack('>16384f', dval)).reshape(128,128)
               #unpacked = [struct.unpack('d', dval[i:i+8])[0] for i in range(0,len(dval),8)]
-              #unpacked  = [struct.unpack('>i', dval[i:i+4])[0] for i in range(0,len(dval),4)] #Works for all ones
+              #unpacked = [struct.unpack('>i', dval[i:i+4])[0] for i in range(0,len(dval),4)]
               #unpacked = [struct.unpack('h', dval[i:i+2])[0] for i in range(0,len(dval),2)]
-              rasterds[col_nbr*128:(col_nbr+1)*128,row_nbr*128:(row_nbr+1)*128] = unpacked
+
+              #Save data to the numpy array
+              rasterds[row_nbr*128:(row_nbr+1)*128,col_nbr*128:(col_nbr+1)*128] = unpacked
+
               print("Unpacked len: {0}".format(len(unpacked)))
-              #print(unpacked)
+
+              #Write out unpacked data for analysis. TODO: Format this nicer
               fout.write(' '.join(map(str,unpacked)))
-            #print('Field %s : "%s" (len=%d)' % (fields[ifield].name, val, length))
+
             print('Field %s : "%s" (len=%d)' % (fields[ifield].name, "BINARY DATA", length))
 
         elif fields[ifield].type == 9:
@@ -945,6 +934,18 @@ for fid in range(nfeaturesx):
             print('unhandled type : %d' % fields[ifield].type)
 
 
-fout.GetRasterBand(1).WriteArray(rasterds, 0, 0)
-zfout = None
+
+
+
+
+
+
+#Save the numpy array as a raster
+driver = gdal.GetDriverByName('GTiff')
+fout   = driver.Create("/z/test.tif", 10000, 10000, 1, gdalconst.GDT_Float32)
+band   = fout.GetRasterBand(1)
+band.WriteArray(rasterds, 0, 0)
+band.SetNoDataValue(-9999)
+#code.interact(local=locals())
+fout = None
 del fout
